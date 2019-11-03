@@ -1,6 +1,6 @@
 # stochastic-simulator
 
-A really basic stochastic model (at the time I write this, I mean basically a probablistic state machine - I'm not actually well-versed enough to know what to call that) simulator.
+A really basic stochastic model (at the time I write this, I mean basically a probablistic state machine - I'm not actually well-versed enough to know what to call that) simulator, that provides a basic API to create the models and run simulations in parallel.
 
 ## Usage
 ```
