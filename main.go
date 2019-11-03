@@ -2,11 +2,15 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
+	"time"
 
 	"github.com/epswartz/stochastic-simulator/pkg/model"
 )
 
 func main() {
+	rand.Seed(time.Now().UTC().UnixNano())
+
 	fmt.Println("Constructing basic model")
 	endState1 := model.State{
 		Name: "End1",
@@ -32,6 +36,12 @@ func main() {
 	}
 
 	m := model.Model{
-		StartState: startState,
+		StartState: &startState,
 	}
+
+	responses := m.RunToEnd(10, 5)
+	for _, r := range responses {
+		fmt.Println(r.EndState.Name, r.Err)
+	}
+
 }

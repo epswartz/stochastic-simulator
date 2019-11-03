@@ -2,7 +2,6 @@ package model
 
 import (
 	"errors"
-	"fmt"
 	"math/rand"
 
 	u "github.com/epswartz/stochastic-simulator/pkg/util"
@@ -12,7 +11,7 @@ import (
 TODO
 	0. Need a list of states in Model type so they can all be validated before it's run
 	1. User-defined step limit and time limit for runs
-	2. Keep history of states
+	2. Keep history of states, return through run methods
 */
 // Represents the entire model
 type Model struct {
@@ -26,7 +25,7 @@ type modelState struct {
 
 // Moves a modelState to the next state, and also returns that state for convenience.
 // Relies on the state having already been validated with validateState.
-func (ms modelState) nextState() *State {
+func (ms *modelState) nextState() *State {
 	r := rand.Float64()
 	for _, t := range ms.currentState.Transitions {
 		r -= t.Probability
@@ -43,9 +42,9 @@ func (ms modelState) nextState() *State {
 }
 
 // Used to pass result of single simulation through channel.
-type simResponse struct {
-	endState *State
-	err      error
+type SimResponse struct {
+	EndState *State
+	Err      error
 }
 
 // A single state of the automaton
@@ -67,26 +66,25 @@ type Transition struct {
 // If it's an end state, there are no transitions
 // Returns error containing a reason, if it isn't valid.
 func validateState(s *State) error {
-	if len(s.Transitions) == 0 {
-		return errors.New("Empty transitions slice")
-	}
 
 	destinations := map[*State]struct{}{}
 
 	var probabilitySum float64 = 0
 
-	for _, t := range s.Transitions {
-		if _, ok := destinations[t.Destination]; ok {
-			return errors.New("Non-unique destination")
+	// Make sure all the transitions add to 1
+	if s.Transitions != nil {
+		for _, t := range s.Transitions {
+			if _, ok := destinations[t.Destination]; ok {
+				return errors.New("Non-unique destination")
+			}
+			destinations[t.Destination] = struct{}{}
+			probabilitySum += t.Probability
 		}
-		destinations[t.Destination] = struct{}{}
-		probabilitySum += t.Probability
+		if !u.FloatEqual(probabilitySum, 1.0) {
+			return errors.New("Probability values do not sum to one")
+		}
 	}
 
-	if !u.FloatEqual(probabilitySum, 0.0) {
-		return errors.New("Probability values do not sum to one")
-	}
-	fmt.Println("UNIMPLEMENTED FUNCTION")
 	return nil
 }
 
@@ -94,30 +92,55 @@ func validateState(s *State) error {
 // reps - number of times to simulate the model
 // maxSteps - maximum number of steps for each simulation to take before aborting
 // Returns a map of state names the model finished in, and the number of times the model finished in that state.
-// If any of the singular runs fail, the entire thing returns an error.
-func (m Model) RunToEnd(reps, maxSteps int) (map[string]int, error) {
-	// TODO validate all the states.
+// Returns a list of errors, from each simulation.
+func (m Model) RunToEnd(reps, maxSteps int) []SimResponse {
 	// TODO call RunToEndSingle
-	return nil, nil
+
+	resChan := make(chan SimResponse)
+
+	ret := make([]SimResponse, 0, reps)
+
+	for i := 0; i < reps; i++ {
+		go m.RunToEndSingle(maxSteps, resChan)
+	}
+
+	for i := 0; i < reps; i++ {
+		response := <-resChan
+		ret = append(ret, response)
+	}
+
+	return ret
 }
 
-// TODO comment
-func (m Model) RunToEndSingle(maxSteps int, resChan chan simResponse) {
-	// TODO Start in start state, randomly take transitions until you get an end state.
+// Runs the model through a single run., puts result in the channel given to it.
+// Runs either to an end state, or to the maxSteps limit.:w
+func (m Model) RunToEndSingle(maxSteps int, resChan chan SimResponse) {
 	ms := modelState{
 		currentState: m.StartState,
 	}
 
 	for i := 0; i < maxSteps; i++ {
 		err := validateState(ms.currentState)
-		if err != nil {
-			resChan <- simResponse{
-				endState: ms.currentState,
-				err:      err,
+		if err != nil { // If current state is invalid, we're done
+			resChan <- SimResponse{
+				EndState: ms.currentState,
+				Err:      err,
 			}
 			return
 		}
+
+		if ms.currentState.Transitions == nil || len(ms.currentState.Transitions) == 0 { // If it's an end state
+			resChan <- SimResponse{
+				EndState: ms.currentState,
+				Err:      nil,
+			}
+			return
+		}
+
 		ms.nextState()
 	}
-
+	resChan <- SimResponse{
+		EndState: ms.currentState,
+		Err:      errors.New("Reached max number of steps."),
+	}
 }
